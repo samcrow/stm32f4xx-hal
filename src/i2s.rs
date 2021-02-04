@@ -1,6 +1,10 @@
 //! I2S (inter-IC Sound) communication using SPI peripherals
 
-use crate::spi;
+use stm32_i2s::v12x::{Instance, RegisterBlock};
+
+use crate::pac::RCC;
+use crate::time::Hertz;
+use crate::{bb, rcc::Clocks, spi};
 
 // I2S pins are mostly the same as the corresponding SPI pins:
 // MOSI -> SD
@@ -287,58 +291,93 @@ pub trait Enable: sealed::Sealed {
 // SPI4: APB2 bit 13
 // SPI5: APB2 bit 20
 
+/// Implements Instance for I2s<$SPIX, _> and creates an I2s::$spix function to create and enable
+/// the peripheral
+///
+/// $SPIX: The fully-capitalized name of the SPI peripheral (example: SPI1)
+/// $i2sx: The lowercase I2S name of the peripheral (example: i2s1). This is the name of the
+/// function that creates an I2s and enables the peripheral clock.
+/// $clock: The name of the Clocks function that returns the frequency of the I2S clock input
+/// to this SPI peripheral (i2s_cl, i2s_apb1_clk, or i2s2_apb_clk)
+/// $apbxenr: The lowercase name of the RCC peripheral enable register (apb1enr or apb2enr)
+/// $apbxrstr: The lowercase name of the RCC peripheral reset register (apb1rstr or apb2rstr)
+/// $rcc_bit: The index (starting at 0) in $apbxenr and $apbxrstr of the enable and reset bits
+/// for this SPI peripheral
+macro_rules! i2s {
+    ($SPIX:ty, $i2sx:ident, $clock:ident, $apbxenr:ident, $apbxrstr:ident, $rcc_bit:expr) => {
+        impl<PINS> I2s<$SPIX, PINS>
+        where
+            PINS: Pins<$SPIX>,
+        {
+            /// Creates an I2s object around an SPI peripheral and pins
+            ///
+            /// This function enables and resets the SPI peripheral, but does not configure it.
+            ///
+            /// The returned I2s object implements [stm32_i2s::v12x::Instance], so it can be used
+            /// to configure the peripheral and communicate.
+            ///
+            /// # Panics
+            ///
+            /// This function panics if the I2S clock input (from the I2S PLL or similar)
+            /// is not configured.
+            pub fn $i2sx(spi: $SPIX, pins: PINS, clocks: Clocks) -> Self {
+                let input_clock = clocks
+                    .$clock()
+                    .expect("I2S clock input for SPI not enabled");
+                unsafe {
+                    // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
+                    let rcc = &(*RCC::ptr());
+                    // Enable clock, enable reset, clear, reset
+                    bb::set(&rcc.$apbxenr, $rcc_bit);
+                    bb::set(&rcc.$apbxrstr, $rcc_bit);
+                    bb::clear(&rcc.$apbxrstr, $rcc_bit);
+                }
+                I2s {
+                    _spi: spi,
+                    _pins: pins,
+                    input_clock,
+                }
+            }
+        }
+        impl PinMck<$SPIX> for NoMasterClock {}
+        unsafe impl<PINS> Instance for I2s<$SPIX, PINS>
+        where
+            PINS: Pins<$SPIX>,
+        {
+            const REGISTERS: *mut RegisterBlock = <$SPIX>::ptr() as *mut _;
+        }
+    };
+}
+
+// Actually define the SPI instances that can be used for I2S
+// Each one has to be split into two declarations because the F412, F413, F423, and F446
+// have two different I2S clocks while other models have only one.
+
+#[cfg(any(feature = "stm32f410", feature = "stm32f411"))]
+i2s!(crate::pac::SPI1, i2s1, i2s_clk, apb2enr, apb2rstr, 12);
 #[cfg(any(
-    feature = "stm32f410",
-    feature = "stm32f411",
     feature = "stm32f412",
     feature = "stm32f413",
     feature = "stm32f423",
     feature = "stm32f446",
 ))]
-mod spi1 {
-    use super::sealed::Sealed;
-    use super::{Enable, NoMasterClock, PinMck};
-    use crate::bb;
-    use crate::pac::{RCC, SPI1};
-    impl Sealed for SPI1 {}
-    impl Enable for SPI1 {
-        fn enable() {
-            unsafe {
-                // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
-                let rcc = &(*RCC::ptr());
-                const SPI_BIT: u8 = 12;
-                // Enable clock, enable reset, clear, reset
-                bb::set(&rcc.apb2enr, SPI_BIT);
-                bb::set(&rcc.apb2rstr, SPI_BIT);
-                bb::clear(&rcc.apb2rstr, SPI_BIT);
-            }
-        }
-    }
-    impl PinMck<SPI1> for NoMasterClock {}
-}
+i2s!(crate::pac::SPI1, i2s1, i2s_apb2_clk, apb2enr, apb2rstr, 12);
 
 // All STM32F4 models support SPI2/I2S2
-mod spi2 {
-    use super::sealed::Sealed;
-    use super::{Enable, NoMasterClock, PinMck};
-    use crate::bb;
-    use crate::pac::{RCC, SPI2};
-    impl Sealed for SPI2 {}
-    impl Enable for SPI2 {
-        fn enable() {
-            unsafe {
-                // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
-                let rcc = &(*RCC::ptr());
-                const SPI_BIT: u8 = 14;
-                // Enable clock, enable reset, clear, reset
-                bb::set(&rcc.apb1enr, SPI_BIT);
-                bb::set(&rcc.apb1rstr, SPI_BIT);
-                bb::clear(&rcc.apb1rstr, SPI_BIT);
-            }
-        }
-    }
-    impl PinMck<SPI2> for NoMasterClock {}
-}
+#[cfg(not(any(
+    feature = "stm32f412",
+    feature = "stm32f413",
+    feature = "stm32f423",
+    feature = "stm32f446",
+)))]
+i2s!(crate::pac::SPI2, i2s2, i2s_clk, apb1enr, apb1rstr, 14);
+#[cfg(any(
+    feature = "stm32f412",
+    feature = "stm32f413",
+    feature = "stm32f423",
+    feature = "stm32f446",
+))]
+i2s!(crate::pac::SPI2, i2s2, i2s_apb1_clk, apb1enr, apb1rstr, 14);
 
 // All STM32F4 models except STM32F410 support SPI3/I2S3
 #[cfg(any(
@@ -346,94 +385,50 @@ mod spi2 {
     feature = "stm32f405",
     feature = "stm32f407",
     feature = "stm32f411",
-    feature = "stm32f412",
-    feature = "stm32f413",
     feature = "stm32f415",
     feature = "stm32f417",
-    feature = "stm32f423",
     feature = "stm32f427",
     feature = "stm32f429",
     feature = "stm32f437",
     feature = "stm32f439",
-    feature = "stm32f446",
     feature = "stm32f469",
     feature = "stm32f479",
 ))]
-mod spi3 {
-    use super::sealed::Sealed;
-    use super::{Enable, NoMasterClock, PinMck};
-    use crate::bb;
-    use crate::pac::{RCC, SPI3};
-    impl Sealed for SPI3 {}
-    impl Enable for SPI3 {
-        fn enable() {
-            unsafe {
-                // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
-                let rcc = &(*RCC::ptr());
-                const SPI_BIT: u8 = 15;
-                // Enable clock, enable reset, clear, reset
-                bb::set(&rcc.apb1enr, SPI_BIT);
-                bb::set(&rcc.apb1rstr, SPI_BIT);
-                bb::clear(&rcc.apb1rstr, SPI_BIT);
-            }
-        }
-    }
-    impl PinMck<SPI3> for NoMasterClock {}
-}
-
+i2s!(crate::pac::SPI3, i2s3, i2s_clk, apb1enr, apb1rstr, 15);
 #[cfg(any(
-    feature = "stm32f411",
     feature = "stm32f412",
     feature = "stm32f413",
     feature = "stm32f423",
+    feature = "stm32f446",
 ))]
-mod spi4 {
-    use super::sealed::Sealed;
-    use super::{Enable, NoMasterClock, PinMck};
-    use crate::bb;
-    use crate::pac::{RCC, SPI4};
-    impl Sealed for SPI4 {}
-    impl Enable for SPI4 {
-        fn enable() {
-            unsafe {
-                // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
-                let rcc = &(*RCC::ptr());
-                const SPI_BIT: u8 = 13;
-                // Enable clock, enable reset, clear, reset
-                bb::set(&rcc.apb2enr, SPI_BIT);
-                bb::set(&rcc.apb2rstr, SPI_BIT);
-                bb::clear(&rcc.apb2rstr, SPI_BIT);
-            }
-        }
-    }
-    impl PinMck<SPI4> for NoMasterClock {}
+i2s!(crate::pac::SPI3, i2s3, i2s_apb1_clk, apb1enr, apb1rstr, 15);
+
+#[cfg(feature = "stm32f411")]
+i2s!(crate::pac::SPI4, i2s4, i2s_clk, apb2enr, apb2rstr, 13);
+#[cfg(any(feature = "stm32f412", feature = "stm32f413", feature = "stm32f423"))]
+i2s!(crate::pac::SPI4, i2s4, i2s_apb2_clk, apb2enr, apb2rstr, 13);
+
+#[cfg(any(feature = "stm32f410", feature = "stm32f411"))]
+i2s!(crate::pac::SPI5, i2s5, i2s_clk, apb2enr, apb2rstr, 20);
+#[cfg(any(feature = "stm32f412", feature = "stm32f413", feature = "stm32f423"))]
+i2s!(crate::pac::SPI5, i2s5, i2s_apb2_clk, apb2enr, apb2rstr, 20);
+
+/// An I2s wrapper around an SPI object and pins
+pub struct I2s<I, PINS> {
+    _spi: I,
+    _pins: PINS,
+    /// Frequency of clock input to this peripheral from the I2S PLL or related source
+    input_clock: Hertz,
 }
 
-#[cfg(any(
-    feature = "stm32f410",
-    feature = "stm32f411",
-    feature = "stm32f412",
-    feature = "stm32f413",
-    feature = "stm32f423",
-))]
-mod spi5 {
-    use super::sealed::Sealed;
-    use super::{Enable, NoMasterClock, PinMck};
-    use crate::bb;
-    use crate::pac::{RCC, SPI5};
-    impl Sealed for SPI5 {}
-    impl Enable for SPI5 {
-        fn enable() {
-            unsafe {
-                // NOTE(unsafe) this reference will only be used for atomic writes with no side effects.
-                let rcc = &(*RCC::ptr());
-                const SPI_BIT: u8 = 20;
-                // Enable clock, enable reset, clear, reset
-                bb::set(&rcc.apb2enr, SPI_BIT);
-                bb::set(&rcc.apb2rstr, SPI_BIT);
-                bb::clear(&rcc.apb2rstr, SPI_BIT);
-            }
-        }
+impl<I, PINS> I2s<I, PINS>
+where
+    I: Enable,
+    PINS: Pins<I>,
+{
+    /// Returns the frequency of the clock signal that the SPI peripheral is receiving from the
+    /// I2S PLL or similar source
+    pub fn input_clock(&self) -> Hertz {
+        self.input_clock
     }
-    impl PinMck<SPI5> for NoMasterClock {}
 }
