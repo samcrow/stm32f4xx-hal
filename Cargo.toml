@@ -53,6 +53,9 @@ version = "1.0.2"
 features = ["unproven"]
 version = "0.2.3"
 
+[dependencies.stm32_i2s]
+git = "https://github.com/samcrow/stm32_i2s.git"
+
 [dev-dependencies]
 panic-semihosting = "0.5.3"
 cortex-m-semihosting = "0.3.3"
