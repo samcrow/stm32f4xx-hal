@@ -277,12 +277,6 @@ mod ws_pins {
     }
 }
 
-/// An SPI peripheral that can be used in I2S mode
-pub trait Enable: sealed::Sealed {
-    /// Enables the peripheral by setting the corresponding enable bit in an RCC register
-    fn enable();
-}
-
 // All STM32F4 models use the same bits in APB1ENR, APB2ENR, APB1RSTR, and APB2RSTR to enable
 // and reset the SPI peripherals.
 // SPI1: APB2 bit 12
@@ -423,7 +417,6 @@ pub struct I2s<I, PINS> {
 
 impl<I, PINS> I2s<I, PINS>
 where
-    I: Enable,
     PINS: Pins<I>,
 {
     /// Returns the frequency of the clock signal that the SPI peripheral is receiving from the
