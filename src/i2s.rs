@@ -1,6 +1,6 @@
 //! I2S (inter-IC Sound) communication using SPI peripherals
 
-use stm32_i2s::v12x::{Instance, RegisterBlock};
+use stm32_i2s_v12x::{Instance, RegisterBlock};
 
 use crate::pac::RCC;
 use crate::time::Hertz;
@@ -307,7 +307,7 @@ macro_rules! i2s {
             ///
             /// This function enables and resets the SPI peripheral, but does not configure it.
             ///
-            /// The returned I2s object implements [stm32_i2s::v12x::Instance], so it can be used
+            /// The returned I2s object implements [stm32_i2s_v12x::Instance], so it can be used
             /// to configure the peripheral and communicate.
             ///
             /// # Panics

@@ -120,7 +120,7 @@ pub mod delay;
 pub mod gpio;
 #[cfg(feature = "device-selected")]
 pub mod i2c;
-#[cfg(feature = "device-selected")]
+#[cfg(feature = "i2s")]
 pub mod i2s;
 #[cfg(all(
     feature = "usb_fs",
