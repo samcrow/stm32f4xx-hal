@@ -1,5 +1,5 @@
 //!
-//! # I2S example for STM32F411 example
+//! # I2S example for STM32F411
 //!
 //! This application demonstrates I2S communication with the DAC on an STM32F411E-DISCO board
 //!
@@ -172,22 +172,20 @@ fn main() -> ! {
 
     // Start sending samples
     i2s.enable();
-    loop {
-        let sine_375_1sec = SINE_375.iter().cloned().cycle().take(sample_rate as usize);
-        let sine_750_1sec = SINE_750.iter().cloned().cycle().take(sample_rate as usize);
+    let sine_375_1sec = SINE_375.iter().cloned().cycle().take(sample_rate as usize);
+    let sine_750_1sec = SINE_750.iter().cloned().cycle().take(sample_rate as usize);
 
-        loop {
-            // Play one second of each tone
-            for sample in sine_375_1sec.clone() {
-                // Transmit the same sample on the left and right channels
-                block!(i2s.transmit(sample)).unwrap();
-                block!(i2s.transmit(sample)).unwrap();
-            }
-            for sample in sine_750_1sec.clone() {
-                // Transmit the same sample on the left and right channels
-                block!(i2s.transmit(sample)).unwrap();
-                block!(i2s.transmit(sample)).unwrap();
-            }
+    loop {
+        // Play one second of each tone
+        for sample in sine_375_1sec.clone() {
+            // Transmit the same sample on the left and right channels
+            block!(i2s.transmit(sample)).unwrap();
+            block!(i2s.transmit(sample)).unwrap();
+        }
+        for sample in sine_750_1sec.clone() {
+            // Transmit the same sample on the left and right channels
+            block!(i2s.transmit(sample)).unwrap();
+            block!(i2s.transmit(sample)).unwrap();
         }
     }
 }
