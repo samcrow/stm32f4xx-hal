@@ -1,4 +1,6 @@
 //! I2S (inter-IC Sound) communication using SPI peripherals
+//!
+//! This module is only available if the `i2s` feature is enabled.
 
 use stm32_i2s_v12x::{Instance, RegisterBlock};
 
